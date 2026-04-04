@@ -1,0 +1,28 @@
+{
+  "name": "@zenuml/confluence-cli",
+  "version": "0.1.0",
+  "description": "CLI for managing ZenUML diagrams in Confluence",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZenUml/zenuml-cli.git"
+  },
+  "keywords": ["zenuml", "confluence", "diagram", "cli"],
+  "type": "module",
+  "bin": {
+    "zenuml": "dist/index.js"
+  },
+  "files": ["dist", "!dist/**/*.spec.js"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run -c vitest.config.mts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.2.2",
+    "vitest": "^2.1.9"
+  }
+}
