@@ -16,8 +16,8 @@ set -euo pipefail
 #   ZENUML_CLI_EMAIL       (overrides auth file)
 #   ZENUML_CLI_API_TOKEN   (overrides auth file)
 #   ATLASSIAN_AUTH_FILE    (default: ~/.atlassian_auth.json)
-#   CLI_TEST_VARIANTS      (default: "full lite")
-#   CLI_TEST_ADDON_KEY     (optional override)
+#   CLI_TEST_VARIANTS      (default: "auto")
+#   CLI_TEST_ADDON_KEY     (optional, skips auto-detection)
 #   RUN_WRITE_TESTS        (set to 1 to enable create/update/delete flow)
 #   CLI_TEST_PAGE_ID       (required only when RUN_WRITE_TESTS=1)
 
@@ -71,7 +71,7 @@ if [ -z "${ZENUML_CLI_API_TOKEN:-}" ]; then
   exit 1
 fi
 
-VARIANTS="${CLI_TEST_VARIANTS:-full lite}"
+VARIANTS="${CLI_TEST_VARIANTS:-auto}"
 CLI_CMD=(node "$REPO_ROOT/dist/index.js")
 
 run_cli() {
@@ -96,9 +96,9 @@ for variant in $VARIANTS; do
   echo ""
   echo "--- Variant: $variant ---"
   if [ -n "${CLI_TEST_ADDON_KEY:-}" ]; then
-    run_cli diagram list --format json --limit 10 --variant "$variant" --addon-key "$CLI_TEST_ADDON_KEY"
+    run_cli diagram list --format json --limit 10 --addon-key "$CLI_TEST_ADDON_KEY"
   else
-    run_cli diagram list --format json --limit 10 --variant "$variant"
+    run_cli diagram list --format json --limit 10
   fi
 done
 
@@ -139,15 +139,13 @@ if [ -n "${CLI_TEST_ADDON_KEY:-}" ]; then
     --type sequence \
     --title "CLI smoke test $(date +%s)" \
     --file "$CREATE_FILE" \
-    --variant full \
     --addon-key "$CLI_TEST_ADDON_KEY" >"$CREATE_OUTPUT"
 else
   run_cli diagram create \
     --page "$CLI_TEST_PAGE_ID" \
     --type sequence \
     --title "CLI smoke test $(date +%s)" \
-    --file "$CREATE_FILE" \
-    --variant full >"$CREATE_OUTPUT"
+    --file "$CREATE_FILE" >"$CREATE_OUTPUT"
 fi
 
 CREATED_ID="$(python - <<'PY' "$CREATE_OUTPUT"
@@ -166,16 +164,14 @@ if [ -n "${CLI_TEST_ADDON_KEY:-}" ]; then
     --type sequence \
     --title "CLI smoke test updated" \
     --file "$UPDATE_FILE" \
-    --variant full \
     --addon-key "$CLI_TEST_ADDON_KEY"
-  run_cli diagram export "$CREATED_ID" --format raw --variant full --addon-key "$CLI_TEST_ADDON_KEY"
+  run_cli diagram export "$CREATED_ID" --format raw --addon-key "$CLI_TEST_ADDON_KEY"
 else
   run_cli diagram update "$CREATED_ID" \
     --type sequence \
     --title "CLI smoke test updated" \
-    --file "$UPDATE_FILE" \
-    --variant full
-  run_cli diagram export "$CREATED_ID" --format raw --variant full
+    --file "$UPDATE_FILE"
+  run_cli diagram export "$CREATED_ID" --format raw
 fi
 
 run_cli diagram delete "$CREATED_ID" --force
