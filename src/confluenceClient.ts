@@ -7,7 +7,6 @@ import {
   ParsedDiagramRecord,
   ResolvedConfig,
   UpdateDiagramOptions,
-  Variant,
 } from './types.js';
 import { DiagramType } from './types.js';
 import { getAddonKey, getCustomContentType, getStorageTypeForDiagram } from './diagram.js';
@@ -20,7 +19,7 @@ interface PaginatedResponse<T> {
 }
 
 export class ConfluenceClient {
-  private detectedVariant: Variant | undefined;
+  private detectedVariant: 'full' | 'lite' | undefined;
 
   constructor(private readonly config: ResolvedConfig) {}
 
@@ -29,7 +28,7 @@ export class ConfluenceClient {
   }
 
   async detectVariant(): Promise<'full' | 'lite'> {
-    if (this.detectedVariant && this.detectedVariant !== 'auto') {
+    if (this.detectedVariant) {
       return this.detectedVariant;
     }
 
@@ -62,20 +61,8 @@ export class ConfluenceClient {
       return (explicitAddonKey ?? this.config.addonKey)!;
     }
 
-    if (this.config.variant !== 'auto') {
-      return getAddonKey(this.config.variant);
-    }
-
     const variant = await this.detectVariant();
     return getAddonKey(variant);
-  }
-
-  async resolveVariant(explicitVariant?: Variant): Promise<'full' | 'lite'> {
-    const v = explicitVariant ?? this.config.variant;
-    if (v !== 'auto') {
-      return v;
-    }
-    return this.detectVariant();
   }
 
   async getDiagram(id: string): Promise<ParsedDiagramRecord> {
@@ -114,7 +101,7 @@ export class ConfluenceClient {
   }
 
   async createDiagram(options: CreateDiagramOptions): Promise<ParsedDiagramRecord> {
-    const variant = await this.resolveVariant(options.variant);
+    const variant = await this.detectVariant();
     const payload = {
       type: getCustomContentType(options.type, variant, options.addonKey ?? this.config.addonKey),
       pageId: options.pageId,
@@ -136,7 +123,7 @@ export class ConfluenceClient {
   async updateDiagram(options: UpdateDiagramOptions): Promise<ParsedDiagramRecord> {
     const existing = await this.getDiagram(options.id);
     const nextVersion = (existing.version?.number ?? 0) + 1;
-    const variant = await this.resolveVariant(options.variant);
+    const variant = await this.detectVariant();
     const nextType = getCustomContentType(
       options.diagram.diagramType,
       variant,

@@ -2,25 +2,12 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { ResolvedConfig, StoredConfig, Variant } from './types.js';
+import { ResolvedConfig, StoredConfig } from './types.js';
 
 const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.zenuml-cli.json');
-const DEFAULT_VARIANT: Variant = 'auto';
 
 function getConfigPath(): string {
   return process.env.ZENUML_CLI_CONFIG || DEFAULT_CONFIG_PATH;
-}
-
-function validateVariant(value: string | undefined): Variant | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  if (value !== 'full' && value !== 'lite' && value !== 'auto') {
-    throw new Error(`Unsupported variant "${value}". Expected "full", "lite", or "auto".`);
-  }
-
-  return value;
 }
 
 export async function loadStoredConfig(): Promise<StoredConfig> {
@@ -34,7 +21,6 @@ export async function loadStoredConfig(): Promise<StoredConfig> {
       site: parsed.site,
       email: parsed.email,
       apiToken: parsed.apiToken,
-      variant: validateVariant(parsed.variant),
       addonKey: parsed.addonKey,
     };
   } catch (error) {
@@ -64,7 +50,6 @@ export function resolveConfig(overrides: StoredConfig): Promise<ResolvedConfig> 
       site: overrides.site ?? process.env.ZENUML_CLI_SITE ?? stored.site,
       email: overrides.email ?? process.env.ZENUML_CLI_EMAIL ?? stored.email,
       apiToken: overrides.apiToken ?? process.env.ZENUML_CLI_API_TOKEN ?? stored.apiToken,
-      variant: validateVariant(overrides.variant ?? process.env.ZENUML_CLI_VARIANT ?? stored.variant) ?? DEFAULT_VARIANT,
       addonKey: overrides.addonKey ?? process.env.ZENUML_CLI_ADDON_KEY ?? stored.addonKey,
     };
 
@@ -84,7 +69,6 @@ export function resolveConfig(overrides: StoredConfig): Promise<ResolvedConfig> 
       site: normalizeSiteUrl(merged.site),
       email: merged.email,
       apiToken: merged.apiToken,
-      variant: merged.variant ?? DEFAULT_VARIANT,
       addonKey: merged.addonKey,
     };
   });

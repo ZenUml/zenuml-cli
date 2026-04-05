@@ -34,7 +34,6 @@ describe('ConfluenceClient', () => {
       site: 'https://example.atlassian.net',
       email: 'user@example.com',
       apiToken: 'token-1234',
-      variant: 'full',
     });
 
     const record = await client.getDiagram('123');
@@ -103,7 +102,7 @@ describe('ConfluenceClient', () => {
       site: 'https://example.atlassian.net',
       email: 'user@example.com',
       apiToken: 'token-1234',
-      variant: 'full',
+      addonKey: 'com.zenuml.confluence-addon',
     });
 
     const records = await client.listDiagrams({ limit: 10 });
@@ -162,7 +161,7 @@ describe('ConfluenceClient', () => {
       site: 'https://example.atlassian.net',
       email: 'user@example.com',
       apiToken: 'token-1234',
-      variant: 'full',
+      addonKey: 'com.zenuml.confluence-addon',
     });
 
     const records = await client.listDiagrams({ limit: 10 });
@@ -230,7 +229,7 @@ describe('ConfluenceClient', () => {
       site: 'https://example.atlassian.net',
       email: 'user@example.com',
       apiToken: 'token-1234',
-      variant: 'full',
+      addonKey: 'com.zenuml.confluence-addon',
     });
 
     const records = await client.listDiagrams({ limit: 10 });
@@ -275,7 +274,6 @@ describe('ConfluenceClient', () => {
       site: 'https://example.atlassian.net',
       email: 'user@example.com',
       apiToken: 'token-1234',
-      variant: 'auto',
     });
 
     const records = await client.listDiagrams({ limit: 10 });
@@ -289,7 +287,7 @@ describe('ConfluenceClient', () => {
     expect(urls[2]).toContain('com.zenuml.confluence-addon-lite%3Azenuml-content-sequence');
   });
 
-  it('skips detection when variant is explicitly set', async () => {
+  it('skips detection when addonKey is explicitly set', async () => {
     const fetchMock = vi
       .fn()
       // listDiagrams: full sequence page (no detection probes)
@@ -319,7 +317,7 @@ describe('ConfluenceClient', () => {
       site: 'https://example.atlassian.net',
       email: 'user@example.com',
       apiToken: 'token-1234',
-      variant: 'full',
+      addonKey: 'com.zenuml.confluence-addon',
     });
 
     const records = await client.listDiagrams({ limit: 10 });
@@ -347,7 +345,6 @@ describe('ConfluenceClient', () => {
       site: 'https://example.atlassian.net',
       email: 'user@example.com',
       apiToken: 'token-1234',
-      variant: 'auto',
     });
 
     await client.listDiagrams({ limit: 10 });

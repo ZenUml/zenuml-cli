@@ -1,4 +1,4 @@
-export type Variant = 'full' | 'lite' | 'auto';
+export type Variant = 'full' | 'lite';
 
 export type OutputFormat = 'json' | 'text';
 export type ExportFormat = 'json' | 'raw';
@@ -27,7 +27,6 @@ export interface StoredConfig {
   site?: string;
   email?: string;
   apiToken?: string;
-  variant?: Variant;
   addonKey?: string;
 }
 
@@ -35,7 +34,6 @@ export interface ResolvedConfig extends StoredConfig {
   site: string;
   email: string;
   apiToken: string;
-  variant: Variant;
 }
 
 export interface CustomContentVersion {
@@ -72,7 +70,6 @@ export interface ListDiagramOptions {
   page?: string;
   type?: DiagramType;
   limit: number;
-  variant?: Variant;
   addonKey?: string;
 }
 
@@ -81,7 +78,6 @@ export interface CreateDiagramOptions {
   type: DiagramType;
   title?: string;
   diagram: Diagram;
-  variant?: Variant;
   addonKey?: string;
 }
 
@@ -89,6 +85,5 @@ export interface UpdateDiagramOptions {
   id: string;
   title?: string;
   diagram: Diagram;
-  variant?: Variant;
   addonKey?: string;
 }

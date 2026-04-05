@@ -6,13 +6,13 @@ import { clearStoredConfig, getConfigPathForDisplay, loadStoredConfig, maskToken
 import { ConfluenceClient } from './confluenceClient.js';
 import { extractDiagramContent, normalizeDiagramType, parseDiagramInput, readDiagramInput } from './diagram.js';
 import { printRecord, printRecords } from './format.js';
-import { DiagramType, ExportFormat, OutputFormat, StoredConfig, Variant } from './types.js';
+import { DiagramType, ExportFormat, OutputFormat, StoredConfig } from './types.js';
 
 function printHelp(): void {
   console.log(`zenuml CLI
 
 Usage:
-  zenuml auth login --site <url> --email <email> --api-token <token> [--variant full|lite|auto] [--addon-key <key>]
+  zenuml auth login --site <url> --email <email> --api-token <token> [--addon-key <key>]
   zenuml auth whoami
   zenuml auth logout
   zenuml diagram list [--space <spaceKey|spaceId>] [--page <pageId>] [--type <type>] [--limit <n>] [--format json|text]
@@ -32,7 +32,6 @@ function parseCommonFlags(args: string[]) {
       site: { type: 'string' },
       email: { type: 'string' },
       'api-token': { type: 'string' },
-      variant: { type: 'string' },
       'addon-key': { type: 'string' },
       format: { type: 'string' },
       output: { type: 'string' },
@@ -54,7 +53,6 @@ function buildOverrides(values: Record<string, string | boolean | undefined>): S
     site: values.site as string | undefined,
     email: values.email as string | undefined,
     apiToken: values['api-token'] as string | undefined,
-    variant: values.variant as Variant | undefined,
     addonKey: values['addon-key'] as string | undefined,
   };
 }
@@ -125,7 +123,6 @@ async function main(): Promise<void> {
       console.log(`Site: ${resolved.site}`);
       console.log(`Email: ${resolved.email}`);
       console.log(`API token: ${maskToken(resolved.apiToken)}`);
-      console.log(`Variant: ${resolved.variant}`);
       if (resolved.addonKey) {
         console.log(`Addon key: ${resolved.addonKey}`);
       }
@@ -172,7 +169,6 @@ async function main(): Promise<void> {
         page: parsed.values.page as string | undefined,
         type,
         limit,
-        variant: config.variant,
         addonKey: config.addonKey,
       });
       printRecords(records, asOutputFormat(parsed.values.format as string | undefined));
@@ -224,7 +220,6 @@ async function main(): Promise<void> {
         type,
         title: parsed.values.title as string | undefined,
         diagram,
-        variant: config.variant,
         addonKey: config.addonKey,
       });
       printRecord(created, 'json');
@@ -249,7 +244,6 @@ async function main(): Promise<void> {
         id,
         title: parsed.values.title as string | undefined,
         diagram,
-        variant: config.variant,
         addonKey: config.addonKey,
       });
       printRecord(updated, 'json');
