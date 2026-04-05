@@ -238,4 +238,122 @@ describe('ConfluenceClient', () => {
     expect(records).toHaveLength(1);
     expect(records[0]?.id).toBe('2');
   });
+
+  it('detects lite variant when full has no content', async () => {
+    const fetchMock = vi
+      .fn()
+      // detectVariant: full/sequence → empty
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [] }) })
+      // detectVariant: full/graph → empty
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [] }) })
+      // detectVariant: lite/sequence → found
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ id: '1' }] }) })
+      // listDiagrams: lite sequence page
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              id: '1',
+              type: 'ac:com.zenuml.confluence-addon-lite:zenuml-content-sequence',
+              title: 'Lite diagram',
+              status: 'current',
+              pageId: '99',
+              body: { raw: { value: JSON.stringify({ diagramType: 'sequence', code: 'A->B' }) } },
+              version: { number: 1 },
+            },
+          ],
+          _links: {},
+        }),
+      })
+      // listDiagrams: lite graph page
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [], _links: {} }) });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new ConfluenceClient({
+      site: 'https://example.atlassian.net',
+      email: 'user@example.com',
+      apiToken: 'token-1234',
+      variant: 'auto',
+    });
+
+    const records = await client.listDiagrams({ limit: 10 });
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.id).toBe('1');
+    // Verify detection probed full first, then lite
+    const urls = fetchMock.mock.calls.map((c: unknown[]) => c[0] as string);
+    expect(urls[0]).toContain('com.zenuml.confluence-addon%3Azenuml-content-sequence');
+    expect(urls[1]).toContain('com.zenuml.confluence-addon%3Azenuml-content-graph');
+    expect(urls[2]).toContain('com.zenuml.confluence-addon-lite%3Azenuml-content-sequence');
+  });
+
+  it('skips detection when variant is explicitly set', async () => {
+    const fetchMock = vi
+      .fn()
+      // listDiagrams: full sequence page (no detection probes)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              id: '1',
+              type: 'ac:com.zenuml.confluence-addon:zenuml-content-sequence',
+              title: 'Full diagram',
+              status: 'current',
+              pageId: '99',
+              body: { raw: { value: JSON.stringify({ diagramType: 'sequence', code: 'A->B' }) } },
+              version: { number: 1 },
+            },
+          ],
+          _links: {},
+        }),
+      })
+      // listDiagrams: full graph page
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [], _links: {} }) });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new ConfluenceClient({
+      site: 'https://example.atlassian.net',
+      email: 'user@example.com',
+      apiToken: 'token-1234',
+      variant: 'full',
+    });
+
+    const records = await client.listDiagrams({ limit: 10 });
+
+    expect(records).toHaveLength(1);
+    // Only 2 calls (list sequence + list graph), no detection probes
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches detected variant across calls', async () => {
+    const fetchMock = vi
+      .fn()
+      // detectVariant: full/sequence → found
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ id: '1' }] }) })
+      // first listDiagrams calls
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [], _links: {} }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [], _links: {} }) })
+      // second listDiagrams calls (no new detection)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [], _links: {} }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [], _links: {} }) });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new ConfluenceClient({
+      site: 'https://example.atlassian.net',
+      email: 'user@example.com',
+      apiToken: 'token-1234',
+      variant: 'auto',
+    });
+
+    await client.listDiagrams({ limit: 10 });
+    await client.listDiagrams({ limit: 10 });
+
+    // 1 detection probe + 2 list calls + 2 list calls = 5 total (no second detection)
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
 });

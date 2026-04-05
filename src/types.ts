@@ -1,4 +1,4 @@
-export type Variant = 'full' | 'lite';
+export type Variant = 'full' | 'lite' | 'auto';
 
 export type OutputFormat = 'json' | 'text';
 export type ExportFormat = 'json' | 'raw';

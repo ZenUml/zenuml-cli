@@ -5,7 +5,7 @@ import path from 'node:path';
 import { ResolvedConfig, StoredConfig, Variant } from './types.js';
 
 const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.zenuml-cli.json');
-const DEFAULT_VARIANT: Variant = 'full';
+const DEFAULT_VARIANT: Variant = 'auto';
 
 function getConfigPath(): string {
   return process.env.ZENUML_CLI_CONFIG || DEFAULT_CONFIG_PATH;
@@ -16,8 +16,8 @@ function validateVariant(value: string | undefined): Variant | undefined {
     return undefined;
   }
 
-  if (value !== 'full' && value !== 'lite') {
-    throw new Error(`Unsupported variant "${value}". Expected "full" or "lite".`);
+  if (value !== 'full' && value !== 'lite' && value !== 'auto') {
+    throw new Error(`Unsupported variant "${value}". Expected "full", "lite", or "auto".`);
   }
 
   return value;

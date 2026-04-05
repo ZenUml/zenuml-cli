@@ -29,7 +29,7 @@ Credentials are stored in `~/.zenuml-cli.json`. You can also use environment var
 | `ZENUML_CLI_SITE` | Confluence site URL |
 | `ZENUML_CLI_EMAIL` | Atlassian account email |
 | `ZENUML_CLI_API_TOKEN` | Atlassian API token |
-| `ZENUML_CLI_VARIANT` | Addon variant (`full` or `lite`) |
+| `ZENUML_CLI_VARIANT` | Addon variant (`full`, `lite`, or `auto`) |
 | `ZENUML_CLI_ADDON_KEY` | Override addon key |
 | `ZENUML_CLI_CONFIG` | Override config file path |
 
@@ -71,10 +71,14 @@ zenuml diagram export <id> [--format raw|json] [--output <path>]
 
 ### Variants
 
-The CLI supports both addon variants via `--variant`:
+The CLI automatically detects which addon variant is installed on your Confluence site.
+You can also set it explicitly via `--variant`:
 
-- `full` (default) — `com.zenuml.confluence-addon`
+- `auto` (default) — auto-detects by probing the site for existing content
+- `full` — `com.zenuml.confluence-addon`
 - `lite` — `com.zenuml.confluence-addon-lite`
+
+When using `auto`, the CLI checks for existing ZenUML content under each addon key and uses the first match. If no content exists, it defaults to `full`.
 
 ## Development
 

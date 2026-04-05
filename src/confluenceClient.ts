@@ -7,9 +7,10 @@ import {
   ParsedDiagramRecord,
   ResolvedConfig,
   UpdateDiagramOptions,
+  Variant,
 } from './types.js';
 import { DiagramType } from './types.js';
-import { getCustomContentType, getStorageTypeForDiagram } from './diagram.js';
+import { getAddonKey, getCustomContentType, getStorageTypeForDiagram } from './diagram.js';
 
 interface PaginatedResponse<T> {
   results: T[];
@@ -19,10 +20,62 @@ interface PaginatedResponse<T> {
 }
 
 export class ConfluenceClient {
+  private detectedVariant: Variant | undefined;
+
   constructor(private readonly config: ResolvedConfig) {}
 
   async whoAmI(): Promise<Record<string, unknown>> {
     return this.requestJson('/wiki/rest/api/user/current');
+  }
+
+  async detectVariant(): Promise<'full' | 'lite'> {
+    if (this.detectedVariant && this.detectedVariant !== 'auto') {
+      return this.detectedVariant;
+    }
+
+    process.stderr.write('Auto-detecting addon variant...\n');
+    const storageTypes = ['zenuml-content-sequence', 'zenuml-content-graph'];
+    const candidates: Array<'full' | 'lite'> = ['full', 'lite'];
+
+    for (const variant of candidates) {
+      const addonKey = getAddonKey(variant);
+      for (const storageType of storageTypes) {
+        const type = `ac:${addonKey}:${storageType}`;
+        const probePath = `/wiki/api/v2/custom-content?type=${encodeURIComponent(type)}&limit=1`;
+
+        const page = await this.requestJson<PaginatedResponse<CustomContentRecord>>(probePath);
+        if (page.results.length > 0) {
+          this.detectedVariant = variant;
+          process.stderr.write(`Detected variant: ${variant}\n`);
+          return variant;
+        }
+      }
+    }
+
+    // Default to full if neither has content yet
+    this.detectedVariant = 'full';
+    return 'full';
+  }
+
+  async resolveAddonKey(explicitAddonKey?: string): Promise<string> {
+    if (explicitAddonKey ?? this.config.addonKey) {
+      return (explicitAddonKey ?? this.config.addonKey)!;
+    }
+
+    if (this.config.variant !== 'auto') {
+      return getAddonKey(this.config.variant);
+    }
+
+    const variant = await this.detectVariant();
+    return getAddonKey(variant);
+  }
+
+  async resolveVariant(explicitVariant?: Variant): Promise<'full' | 'lite'> {
+    const v = explicitVariant ?? this.config.variant;
+    if (v !== 'auto') {
+      return v;
+    }
+    return this.detectVariant();
   }
 
   async getDiagram(id: string): Promise<ParsedDiagramRecord> {
@@ -35,10 +88,11 @@ export class ConfluenceClient {
       ? [getStorageTypeForDiagram(options.type)]
       : ['zenuml-content-sequence', 'zenuml-content-graph'];
 
+    const addonKey = await this.resolveAddonKey(options.addonKey);
     const records = new Map<string, ParsedDiagramRecord>();
 
     for (const storageType of storageTypes) {
-      const type = `ac:${options.addonKey ?? this.config.addonKey ?? this.defaultAddonKey()}:${storageType}`;
+      const type = `ac:${addonKey}:${storageType}`;
       const requestPath = await this.buildListPath(options, type);
       const page = await this.collectPaginated<CustomContentRecord>(requestPath, options.limit);
 
@@ -60,8 +114,9 @@ export class ConfluenceClient {
   }
 
   async createDiagram(options: CreateDiagramOptions): Promise<ParsedDiagramRecord> {
+    const variant = await this.resolveVariant(options.variant);
     const payload = {
-      type: getCustomContentType(options.type, options.variant ?? this.config.variant, options.addonKey ?? this.config.addonKey),
+      type: getCustomContentType(options.type, variant, options.addonKey ?? this.config.addonKey),
       pageId: options.pageId,
       title: options.title || options.diagram.title || `Untitled ${new Date().toISOString()}`,
       body: {
@@ -81,9 +136,10 @@ export class ConfluenceClient {
   async updateDiagram(options: UpdateDiagramOptions): Promise<ParsedDiagramRecord> {
     const existing = await this.getDiagram(options.id);
     const nextVersion = (existing.version?.number ?? 0) + 1;
+    const variant = await this.resolveVariant(options.variant);
     const nextType = getCustomContentType(
       options.diagram.diagramType,
-      options.variant ?? this.config.variant,
+      variant,
       options.addonKey ?? this.config.addonKey,
     );
 
@@ -251,9 +307,4 @@ export class ConfluenceClient {
     return response;
   }
 
-  private defaultAddonKey(): string {
-    return this.config.variant === 'lite'
-      ? 'com.zenuml.confluence-addon-lite'
-      : 'com.zenuml.confluence-addon';
-  }
 }

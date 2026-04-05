@@ -12,7 +12,7 @@ function printHelp(): void {
   console.log(`zenuml CLI
 
 Usage:
-  zenuml auth login --site <url> --email <email> --api-token <token> [--variant full|lite] [--addon-key <key>]
+  zenuml auth login --site <url> --email <email> --api-token <token> [--variant full|lite|auto] [--addon-key <key>]
   zenuml auth whoami
   zenuml auth logout
   zenuml diagram list [--space <spaceKey|spaceId>] [--page <pageId>] [--type <type>] [--limit <n>] [--format json|text]
