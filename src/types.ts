@@ -24,17 +24,37 @@ export interface Diagram {
 }
 
 export interface StoredConfig {
+  authMethod?: 'basic' | 'oauth';
   site?: string;
   email?: string;
   apiToken?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  oauthClientId?: string;
+  oauthClientSecret?: string;
+  cloudId?: string;
   addonKey?: string;
 }
 
-export interface ResolvedConfig extends StoredConfig {
+export interface BasicResolvedConfig extends StoredConfig {
+  authMethod?: 'basic';
   site: string;
   email: string;
   apiToken: string;
 }
+
+export interface OAuthResolvedConfig extends StoredConfig {
+  authMethod: 'oauth';
+  site: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  oauthClientId: string;
+  cloudId: string;
+}
+
+export type ResolvedConfig = BasicResolvedConfig | OAuthResolvedConfig;
 
 export interface CustomContentVersion {
   number: number;

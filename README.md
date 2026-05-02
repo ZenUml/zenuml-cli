@@ -22,15 +22,47 @@ Save credentials locally so you don't have to pass them every time:
 zenuml auth login --site https://your-site.atlassian.net --email you@example.com --api-token YOUR_TOKEN
 ```
 
+Or use OAuth (PKCE + browser callback):
+
+```bash
+zenuml auth login-oauth --site https://your-site.atlassian.net
+```
+
+The CLI ships with a built-in OAuth app (client ID and secret) — no credentials needed for standard usage.
+
+Optional flags (for advanced/self-hosted use):
+
+```bash
+zenuml auth login-oauth \
+	--site https://your-site.atlassian.net \
+	--timeout-ms 180000
+```
+
+Configure your Atlassian OAuth app callback URL to match:
+
+```text
+http://127.0.0.1:53682/oauth/callback
+```
+
 Credentials are stored in `~/.zenuml-cli.json`. You can also use environment variables:
 
 | Variable | Description |
 |---|---|
+| `ZENUML_CLI_AUTH_METHOD` | `basic` or `oauth` |
 | `ZENUML_CLI_SITE` | Confluence site URL |
 | `ZENUML_CLI_EMAIL` | Atlassian account email |
 | `ZENUML_CLI_API_TOKEN` | Atlassian API token |
+| `ZENUML_CLI_ACCESS_TOKEN` | OAuth access token (advanced/manual override) |
+| `ZENUML_CLI_REFRESH_TOKEN` | OAuth refresh token (advanced/manual override) |
+| `ZENUML_CLI_EXPIRES_AT` | OAuth access-token expiry timestamp (ms since epoch) |
+| `ZENUML_CLI_OAUTH_CLIENT_ID` | Atlassian OAuth client ID |
+| `ZENUML_CLI_OAUTH_CLIENT_SECRET` | Atlassian OAuth client secret (optional) |
+| `ZENUML_CLI_CLOUD_ID` | Confluence cloud ID (auto-discovered by login-oauth) |
+| `ZENUML_CLI_OAUTH_CALLBACK_PORT` | OAuth localhost callback port (default: `53682`) |
 | `ZENUML_CLI_ADDON_KEY` | Override addon key (skips auto-detection) |
 | `ZENUML_CLI_CONFIG` | Override config file path |
+
+OAuth mode automatically refreshes access tokens using the stored refresh token.
 
 ## Commands
 
@@ -38,6 +70,7 @@ Credentials are stored in `~/.zenuml-cli.json`. You can also use environment var
 
 ```bash
 zenuml auth login    # Save credentials
+zenuml auth login-oauth  # OAuth login via browser
 zenuml auth whoami   # Test authentication
 zenuml auth logout   # Clear stored credentials
 ```

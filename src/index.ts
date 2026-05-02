@@ -2,10 +2,19 @@
 import { writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 
-import { clearStoredConfig, getConfigPathForDisplay, loadStoredConfig, maskToken, resolveConfig, saveStoredConfig } from './config.js';
+import {
+  clearStoredConfig,
+  getConfigPathForDisplay,
+  loadStoredConfig,
+  maskToken,
+  normalizeSiteUrl,
+  resolveConfig,
+  saveStoredConfig,
+} from './config.js';
 import { ConfluenceClient } from './confluenceClient.js';
 import { extractDiagramContent, normalizeDiagramType, parseDiagramInput, readDiagramInput } from './diagram.js';
 import { printRecord, printRecords } from './format.js';
+import { DEFAULT_OAUTH_CLIENT_ID, DEFAULT_OAUTH_CLIENT_SECRET, runOAuthLogin } from './oauth.js';
 import { DiagramType, ExportFormat, OutputFormat, StoredConfig } from './types.js';
 
 function printHelp(): void {
@@ -13,6 +22,7 @@ function printHelp(): void {
 
 Usage:
   zenuml auth login --site <url> --email <email> --api-token <token> [--addon-key <key>]
+  zenuml auth login-oauth --site <url> --client-id <id> [--client-secret <secret>] [--timeout-ms <ms>] [--callback-port <port>] [--addon-key <key>]
   zenuml auth whoami
   zenuml auth logout
   zenuml diagram list [--space <spaceKey|spaceId>] [--page <pageId>] [--type <type>] [--limit <n>] [--format json|text]
@@ -32,6 +42,16 @@ function parseCommonFlags(args: string[]) {
       site: { type: 'string' },
       email: { type: 'string' },
       'api-token': { type: 'string' },
+      'auth-method': { type: 'string' },
+      'access-token': { type: 'string' },
+      'refresh-token': { type: 'string' },
+      'expires-at': { type: 'string' },
+      'client-id': { type: 'string' },
+      'client-secret': { type: 'string' },
+      'cloud-id': { type: 'string' },
+      scopes: { type: 'string' },
+      'timeout-ms': { type: 'string' },
+      'callback-port': { type: 'string' },
       'addon-key': { type: 'string' },
       format: { type: 'string' },
       output: { type: 'string' },
@@ -49,12 +69,35 @@ function parseCommonFlags(args: string[]) {
 }
 
 function buildOverrides(values: Record<string, string | boolean | undefined>): StoredConfig {
+  const expiresAtRaw = values['expires-at'] as string | undefined;
+  const expiresAt = expiresAtRaw ? Number.parseInt(expiresAtRaw, 10) : undefined;
+
   return {
+    authMethod: values['auth-method'] as 'basic' | 'oauth' | undefined,
     site: values.site as string | undefined,
     email: values.email as string | undefined,
     apiToken: values['api-token'] as string | undefined,
+    accessToken: values['access-token'] as string | undefined,
+    refreshToken: values['refresh-token'] as string | undefined,
+    expiresAt,
+    oauthClientId: values['client-id'] as string | undefined,
+    oauthClientSecret: values['client-secret'] as string | undefined,
+    cloudId: values['cloud-id'] as string | undefined,
     addonKey: values['addon-key'] as string | undefined,
   };
+}
+
+function parseScopes(input: string | undefined): string[] | undefined {
+  if (!input) {
+    return undefined;
+  }
+
+  const values = input
+    .split(/[\s,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return values.length > 0 ? values : undefined;
 }
 
 function asOutputFormat(value: string | undefined): OutputFormat {
@@ -117,7 +160,31 @@ async function main(): Promise<void> {
 
     if (subcommand === 'login') {
       const overrides = buildOverrides(parsed.values);
-      const resolved = await resolveConfig(overrides);
+      const stored = await loadStoredConfig();
+      const site = overrides.site ?? process.env.ZENUML_CLI_SITE ?? stored.site;
+      const email = overrides.email ?? process.env.ZENUML_CLI_EMAIL ?? stored.email;
+      const apiToken = overrides.apiToken ?? process.env.ZENUML_CLI_API_TOKEN ?? stored.apiToken;
+
+      if (!site) {
+        throw new Error('Missing site URL. Provide --site, set ZENUML_CLI_SITE, or run `zenuml auth login`.');
+      }
+
+      if (!email) {
+        throw new Error('Missing email. Provide --email, set ZENUML_CLI_EMAIL, or run `zenuml auth login`.');
+      }
+
+      if (!apiToken) {
+        throw new Error('Missing API token. Provide --api-token, set ZENUML_CLI_API_TOKEN, or run `zenuml auth login`.');
+      }
+
+      const resolved = {
+        authMethod: 'basic' as const,
+        site: normalizeSiteUrl(site),
+        email,
+        apiToken,
+        addonKey: overrides.addonKey ?? stored.addonKey,
+      };
+
       const configPath = await saveStoredConfig(resolved);
       console.log(`Saved credentials to ${configPath}`);
       console.log(`Site: ${resolved.site}`);
@@ -126,6 +193,66 @@ async function main(): Promise<void> {
       if (resolved.addonKey) {
         console.log(`Addon key: ${resolved.addonKey}`);
       }
+      return;
+    }
+
+    if (subcommand === 'login-oauth') {
+      const overrides = buildOverrides(parsed.values);
+      const stored = await loadStoredConfig();
+      const site = overrides.site ?? process.env.ZENUML_CLI_SITE ?? stored.site;
+      const clientId =
+        overrides.oauthClientId ?? process.env.ZENUML_CLI_OAUTH_CLIENT_ID ?? stored.oauthClientId ?? DEFAULT_OAUTH_CLIENT_ID;
+      const clientSecret =
+        overrides.oauthClientSecret ?? process.env.ZENUML_CLI_OAUTH_CLIENT_SECRET ?? stored.oauthClientSecret ??
+        (clientId === DEFAULT_OAUTH_CLIENT_ID ? DEFAULT_OAUTH_CLIENT_SECRET : undefined);
+      const scopes =
+        parseScopes(parsed.values.scopes as string | undefined) ?? parseScopes(process.env.ZENUML_CLI_OAUTH_SCOPES);
+      const timeoutMsRaw = parsed.values['timeout-ms'] as string | undefined;
+      const timeoutMs = timeoutMsRaw ? Number.parseInt(timeoutMsRaw, 10) : undefined;
+      const callbackPortRaw =
+        (parsed.values['callback-port'] as string | undefined) ?? process.env.ZENUML_CLI_OAUTH_CALLBACK_PORT;
+      const callbackPort = callbackPortRaw ? Number.parseInt(callbackPortRaw, 10) : undefined;
+
+      if (!site) {
+        throw new Error('Missing site URL. Provide --site or set ZENUML_CLI_SITE.');
+      }
+
+
+      if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+        throw new Error(`Invalid --timeout-ms value "${timeoutMsRaw}".`);
+      }
+
+      if (callbackPort !== undefined && (!Number.isFinite(callbackPort) || callbackPort <= 0 || callbackPort > 65535)) {
+        throw new Error(`Invalid --callback-port value "${callbackPortRaw}".`);
+      }
+
+      const oauth = await runOAuthLogin({
+        site,
+        clientId,
+        clientSecret,
+        scopes,
+        timeoutMs,
+        callbackPort,
+      });
+
+      const configPath = await saveStoredConfig({
+        authMethod: 'oauth',
+        site: normalizeSiteUrl(site),
+        oauthClientId: clientId,
+        oauthClientSecret: clientSecret,
+        accessToken: oauth.accessToken,
+        refreshToken: oauth.refreshToken,
+        expiresAt: oauth.expiresAt,
+        cloudId: oauth.cloudId,
+        addonKey: overrides.addonKey ?? stored.addonKey,
+      });
+
+      console.log(`Saved OAuth credentials to ${configPath}`);
+      console.log(`Site: ${normalizeSiteUrl(site)}`);
+      console.log(`Cloud ID: ${oauth.cloudId}`);
+      console.log(`Access token: ${maskToken(oauth.accessToken)}`);
+      console.log(`Refresh token: ${maskToken(oauth.refreshToken)}`);
+      console.log(`Expires at: ${new Date(oauth.expiresAt).toISOString()}`);
       return;
     }
 

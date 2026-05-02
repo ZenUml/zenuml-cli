@@ -4,12 +4,15 @@ import {
   CreateDiagramOptions,
   CustomContentRecord,
   ListDiagramOptions,
+  OAuthResolvedConfig,
   ParsedDiagramRecord,
   ResolvedConfig,
   UpdateDiagramOptions,
 } from './types.js';
 import { DiagramType } from './types.js';
 import { getAddonKey, getCustomContentType, getStorageTypeForDiagram } from './diagram.js';
+import { saveStoredConfig } from './config.js';
+import { refreshOAuthToken } from './oauth.js';
 
 interface PaginatedResponse<T> {
   results: T[];
@@ -20,10 +23,14 @@ interface PaginatedResponse<T> {
 
 export class ConfluenceClient {
   private detectedVariant: 'full' | 'lite' | undefined;
+  private readonly oauthRefreshWindowMs = 60000;
 
-  constructor(private readonly config: ResolvedConfig) {}
+  constructor(private config: ResolvedConfig) {}
 
   async whoAmI(): Promise<Record<string, unknown>> {
+    if (this.isOAuthConfig(this.config)) {
+      return decodeJwtPayload(this.config.accessToken);
+    }
     return this.requestJson('/wiki/rest/api/user/current');
   }
 
@@ -274,17 +281,19 @@ export class ConfluenceClient {
   }
 
   private async request(path: string, init?: RequestInit): Promise<Response> {
-    const response = await fetch(`${this.config.site}${path}`, {
-      ...init,
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Basic ${Buffer.from(`${this.config.email}:${this.config.apiToken}`).toString('base64')}`,
-        ...(init?.method && init.method !== 'GET' && init.method !== 'DELETE'
-          ? { 'Content-Type': 'application/json' }
-          : {}),
-        ...init?.headers,
-      },
-    });
+    const response = await this.performRequest(path, init);
+
+    if (response.status === 401 && this.isOAuthConfig(this.config)) {
+      await this.refreshOAuthCredentials();
+      const retry = await this.performRequest(path, init);
+      if (!retry.ok) {
+        const retryBody = await retry.text();
+        throw new Error(
+          `Confluence request failed (${retry.status} ${retry.statusText}) for ${path}: ${retryBody}`,
+        );
+      }
+      return retry;
+    }
 
     if (!response.ok) {
       const body = await response.text();
@@ -294,4 +303,92 @@ export class ConfluenceClient {
     return response;
   }
 
+  private async performRequest(path: string, init?: RequestInit): Promise<Response> {
+    const headers = await this.buildAuthHeaders(init);
+
+    return fetch(this.buildRequestUrl(path), {
+      ...init,
+      headers,
+    });
+  }
+
+  private buildRequestUrl(path: string): string {
+    if (this.isOAuthConfig(this.config)) {
+      return `https://api.atlassian.com/ex/confluence/${this.config.cloudId}${path}`;
+    }
+
+    return `${this.config.site}${path}`;
+  }
+
+  private async buildAuthHeaders(init?: RequestInit): Promise<HeadersInit> {
+    if (this.isOAuthConfig(this.config)) {
+      await this.ensureFreshOAuthAccessToken();
+
+      return {
+        Accept: 'application/json',
+        Authorization: `Bearer ${this.config.accessToken}`,
+        ...(init?.method && init.method !== 'GET' && init.method !== 'DELETE'
+          ? { 'Content-Type': 'application/json' }
+          : {}),
+        ...init?.headers,
+      };
+    }
+
+    return {
+      Accept: 'application/json',
+      Authorization: `Basic ${Buffer.from(`${this.config.email}:${this.config.apiToken}`).toString('base64')}`,
+      ...(init?.method && init.method !== 'GET' && init.method !== 'DELETE'
+        ? { 'Content-Type': 'application/json' }
+        : {}),
+      ...init?.headers,
+    };
+  }
+
+  private async ensureFreshOAuthAccessToken(): Promise<void> {
+    if (!this.isOAuthConfig(this.config)) {
+      return;
+    }
+
+    if (this.config.expiresAt - Date.now() > this.oauthRefreshWindowMs) {
+      return;
+    }
+
+    await this.refreshOAuthCredentials();
+  }
+
+  private async refreshOAuthCredentials(): Promise<void> {
+    if (!this.isOAuthConfig(this.config)) {
+      return;
+    }
+
+    const refreshed = await refreshOAuthToken({
+      clientId: this.config.oauthClientId,
+      clientSecret: this.config.oauthClientSecret,
+      refreshToken: this.config.refreshToken,
+    });
+
+    this.config = {
+      ...this.config,
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken,
+      expiresAt: refreshed.expiresAt,
+    };
+
+    await saveStoredConfig(this.config);
+  }
+
+  private isOAuthConfig(config: ResolvedConfig): config is OAuthResolvedConfig {
+    return config.authMethod === 'oauth';
+  }
+
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Invalid JWT format in access token.');
+  }
+  const payload = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
+  const json = Buffer.from(payload, 'base64').toString('utf8');
+  return JSON.parse(json) as Record<string, unknown>;
 }

@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ConfluenceClient } from './confluenceClient.js';
+import { saveStoredConfig } from './config.js';
+import { refreshOAuthToken } from './oauth.js';
+
+vi.mock('./config.js', () => ({
+  saveStoredConfig: vi.fn().mockResolvedValue('/tmp/config.json'),
+}));
+
+vi.mock('./oauth.js', () => ({
+  refreshOAuthToken: vi.fn(),
+}));
 
 describe('ConfluenceClient', () => {
   afterEach(() => {
@@ -352,5 +362,159 @@ describe('ConfluenceClient', () => {
 
     // 1 detection probe + 2 list calls + 2 list calls = 5 total (no second detection)
     expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('uses bearer auth for oauth config', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: '123',
+        type: 'ac:com.zenuml.confluence-addon:zenuml-content-sequence',
+        title: 'Example',
+        status: 'current',
+        pageId: '999',
+        body: {
+          raw: {
+            value: JSON.stringify({ diagramType: 'sequence', code: 'A->B' }),
+          },
+        },
+        version: { number: 1 },
+      }),
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new ConfluenceClient({
+      authMethod: 'oauth',
+      site: 'https://example.atlassian.net',
+      accessToken: 'oauth-access-token',
+      refreshToken: 'oauth-refresh-token',
+      expiresAt: Date.now() + 3600000,
+      oauthClientId: 'client-id',
+      cloudId: 'cloud-1',
+    });
+
+    await client.getDiagram('123');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.atlassian.com/ex/confluence/cloud-1/wiki/api/v2/custom-content/123?body-format=raw',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer oauth-access-token',
+        }),
+      }),
+    );
+  });
+
+  it('refreshes oauth token before request when token is expiring', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: '123',
+        type: 'ac:com.zenuml.confluence-addon:zenuml-content-sequence',
+        title: 'Example',
+        status: 'current',
+        pageId: '999',
+        body: {
+          raw: {
+            value: JSON.stringify({ diagramType: 'sequence', code: 'A->B' }),
+          },
+        },
+        version: { number: 1 },
+      }),
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+    vi.mocked(refreshOAuthToken).mockResolvedValue({
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
+      expiresAt: Date.now() + 3600000,
+      cloudId: '',
+    });
+
+    const client = new ConfluenceClient({
+      authMethod: 'oauth',
+      site: 'https://example.atlassian.net',
+      accessToken: 'old-access',
+      refreshToken: 'old-refresh',
+      expiresAt: Date.now() + 1000,
+      oauthClientId: 'client-id',
+      oauthClientSecret: 'client-secret',
+      cloudId: 'cloud-1',
+    });
+
+    await client.getDiagram('123');
+
+    expect(refreshOAuthToken).toHaveBeenCalledWith({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      refreshToken: 'old-refresh',
+    });
+    expect(saveStoredConfig).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.atlassian.com/ex/confluence/cloud-1/wiki/api/v2/custom-content/123?body-format=raw',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer new-access',
+        }),
+      }),
+    );
+  });
+
+  it('retries once on oauth 401 after refreshing token', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: async () => 'expired',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: '123',
+          type: 'ac:com.zenuml.confluence-addon:zenuml-content-sequence',
+          title: 'Example',
+          status: 'current',
+          pageId: '999',
+          body: {
+            raw: {
+              value: JSON.stringify({ diagramType: 'sequence', code: 'A->B' }),
+            },
+          },
+          version: { number: 1 },
+        }),
+      });
+
+    vi.stubGlobal('fetch', fetchMock);
+    vi.mocked(refreshOAuthToken).mockResolvedValue({
+      accessToken: 'retry-access',
+      refreshToken: 'retry-refresh',
+      expiresAt: Date.now() + 3600000,
+      cloudId: '',
+    });
+
+    const client = new ConfluenceClient({
+      authMethod: 'oauth',
+      site: 'https://example.atlassian.net',
+      accessToken: 'old-access',
+      refreshToken: 'old-refresh',
+      expiresAt: Date.now() + 3600000,
+      oauthClientId: 'client-id',
+      cloudId: 'cloud-1',
+    });
+
+    await client.getDiagram('123');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refreshOAuthToken).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer retry-access',
+        }),
+      }),
+    );
   });
 });
